@@ -1,0 +1,63 @@
+{
+    "schema_version": "1.0.0",
+    "application_version": "1.0.0",
+    "app": {
+        "name": "DVE"
+    },
+    "scanning": {
+        "supported_extensions": [".pdf", ".xlsx"],
+        "ignored_folders": [".git", "venv", ".venv", "__pycache__", "output", "logs"]
+    },
+    "logging": {
+        "level": "INFO"
+    },
+    "validation_policy": {
+        "default": "strict",
+        "strict": {
+            "missing_signature": "FAIL",
+            "invalid_signature": "FAIL",
+            "unknown_signer": "FAIL",
+            "missing_public_key": "FAIL"
+        },
+        "relaxed": {
+            "missing_signature": "WARNING",
+            "invalid_signature": "FAIL",
+            "unknown_signer": "WARNING",
+            "missing_public_key": "FAIL"
+        }
+    },
+    "crypto": {
+        "profiles": {
+            "default": {
+                "algorithm": "RSA",
+                "hash": "SHA256",
+                "padding": "PKCS1v15"
+            }
+        }
+    },
+    "pdf": {
+        "validation": {
+            "required_signers": {
+                "Prepared By": "Ashok Nadar",
+                "Verified By": "Vishal Chavan",
+                "Approved By": "Nitin Nale"
+            }
+        }
+    },
+    "excel": {
+        "public_keys": {
+            "Raksha": {
+                "display_name": "Raksha",
+                "enabled": true,
+                "profile": "default",
+                "key_path": "RSA_key/Raksha_Publickey.pem"
+            },
+            "Preeti": {
+                "display_name": "Preeti",
+                "enabled": true,
+                "profile": "default",
+                "key_path": "RSA_key/Preeti_Publickey.pem"
+            }
+        }
+    }
+}
