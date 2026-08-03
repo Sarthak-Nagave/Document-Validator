@@ -2,7 +2,7 @@ from collections import defaultdict
 
 from PySide6.QtWidgets import QFrame, QLabel, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QStyle
 from PySide6.QtCore import Signal, Qt
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
 
 class ProjectTree(QFrame):
     node_selected = Signal(str)
@@ -11,23 +11,41 @@ class ProjectTree(QFrame):
         super().__init__(parent)
         self.setObjectName("Card")
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 8, 10, 10)
+        layout.setSpacing(8)
+
+        self._status_icons = {
+            "RUNNING": self._build_status_icon("#1565C0"),
+            "PASS": self._build_status_icon("#2E7D32"),
+            "WARNING": self._build_status_icon("#EF6C00"),
+            "FAIL": self._build_status_icon("#C62828"),
+        }
         
         lbl = QLabel("Project Tree")
-        lbl.setFont(QFont("Segoe UI", 12, QFont.Bold))
+        lbl.setFont(QFont("Segoe UI", 14, QFont.DemiBold))
         layout.addWidget(lbl)
         
         self.tree = QTreeWidget()
         self.tree.setHeaderHidden(False)
         self.tree.setColumnCount(1)
         self.tree.setHeaderLabels(["Project Folders"])
-        self.tree.setFont(QFont("Segoe UI", 10))
+        self.tree.setFont(QFont("Segoe UI", 11))
+        self.tree.setIconSize(QPixmap(14, 14).size())
+        self.tree.setIndentation(26)
+        self.tree.setUniformRowHeights(False)
         self.tree.setTextElideMode(Qt.ElideNone)
-        self.tree.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.tree.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.tree.setWordWrap(True)
+        self.tree.header().setStretchLastSection(True)
+        self.tree.header().setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.tree.header().setStyleSheet("QHeaderView::section { padding: 7px 8px; font-weight: 600; color: #374151; }")
         self.tree.setStyleSheet(
-            "QTreeWidget::item { padding: 8px 6px; min-height: 34px; }"
-            "QTreeWidget::item:selected { background: #E8EEF8; color: #1F2937; }"
+            "QTreeWidget::item { padding: 10px 8px; min-height: 52px; color: #111111; }"
+            "QTreeWidget::item:selected { background: #E3ECFA; color: #111111; }"
+            "QTreeWidget::item:hover { background: #F4F7FC; }"
         )
+        self.tree.setAlternatingRowColors(True)
+        self.tree.setRootIsDecorated(True)
         self.tree.itemSelectionChanged.connect(self._on_selection_changed)
         layout.addWidget(self.tree)
         
@@ -49,6 +67,11 @@ class ProjectTree(QFrame):
         self.root_node.setData(0, Qt.UserRole, "")
         self.tree.addTopLevelItem(self.root_node)
         self.root_node.setExpanded(True)
+        root_font = self.root_node.font(0)
+        root_font.setBold(True)
+        root_font.setPointSize(11)
+        self.root_node.setFont(0, root_font)
+        self.root_node.setForeground(0, QColor("#111111"))
         self.ds_nodes = {}
         
     def add_validation_result(self, result):
@@ -58,7 +81,7 @@ class ProjectTree(QFrame):
         group_name = result.root_group
         if group_name not in self.ds_nodes:
             node = QTreeWidgetItem([group_name])
-            node.setIcon(0, self.style().standardIcon(QStyle.SP_DirIcon))
+            node.setIcon(0, self._status_icons["RUNNING"])
             node.setData(0, Qt.UserRole, group_name)
             self.root_node.addChild(node)
             self.ds_nodes[group_name] = {
@@ -68,6 +91,7 @@ class ProjectTree(QFrame):
             }
             self.root_node.setExpanded(True)
             node.setExpanded(True)
+            self._render_node(group_name)
             
         ds_data = self.ds_nodes[group_name]
         status = result.status.value.upper() if hasattr(result.status, "value") else str(result.status).upper()
@@ -94,45 +118,85 @@ class ProjectTree(QFrame):
 
         if fail_count > 0:
             ds_data["status"] = "FAIL"
-            icon = "🔴"
-            color = QColor("#C62828")
-            status_text = "FAIL"
+            icon_key = "FAIL"
         elif total_count > 0 and pass_count == total_count:
             ds_data["status"] = "PASS"
-            icon = "🟢"
-            color = QColor("#2E7D32")
-            status_text = "PASS"
+            icon_key = "PASS"
         elif pass_count > 0 and warning_count > 0 and (pass_count + warning_count == total_count):
             ds_data["status"] = "PASS"
-            icon = "🟢"
-            color = QColor("#2E7D32")
-            status_text = "PASS ⚠"
+            icon_key = "PASS"
         elif total_count > 0 and warning_count == total_count:
             ds_data["status"] = "WARNING"
-            icon = "🟡"
-            color = QColor("#EF6C00")
-            status_text = "WARNING"
+            icon_key = "WARNING"
         else:
             ds_data["status"] = "RUNNING"
-            icon = "🔵"
-            color = QColor("#1565C0")
-            status_text = "RUNNING"
+            icon_key = "RUNNING"
 
-        text = (
-            f"{icon} {group_name}\n"
-            f"({pass_count} PASS | {fail_count} FAIL | {warning_count} WARNING)"
-        )
-            
-        node = ds_data["node"]
-        node.setText(0, text)
-        node.setForeground(0, color)
-        font = node.font(0)
-        font.setBold(True)
-        node.setFont(0, font)
+        ds_data["icon_key"] = icon_key
+        self._render_node(group_name)
 
         root_font = self.root_node.font(0)
         root_font.setBold(True)
         self.root_node.setFont(0, root_font)
+
+    def _build_status_icon(self, color_hex: str) -> QIcon:
+        pixmap = QPixmap(14, 14)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(color_hex))
+        painter.drawEllipse(1, 1, 12, 12)
+        painter.end()
+        return QIcon(pixmap)
+
+    def _render_node(self, group_name: str):
+        ds_data = self.ds_nodes[group_name]
+        counts = ds_data["counts"]
+        pass_count = counts.get("PASS", 0)
+        fail_count = counts.get("FAIL", 0)
+        warning_count = counts.get("WARNING", 0)
+
+        display_text = (
+            f"{group_name}\n"
+            f"PASS {pass_count}   FAIL {fail_count}   WARNING {warning_count}"
+        )
+        node = ds_data["node"]
+        node.setText(0, display_text)
+        node.setIcon(0, self._status_icons.get(ds_data.get("icon_key", "RUNNING"), self._status_icons["RUNNING"]))
+        node.setForeground(0, QColor("#111111"))
+
+        name_font = QFont(self.tree.font())
+        name_font.setBold(False)
+        name_font.setPointSize(11)
+        node.setFont(0, name_font)
+
+        self._update_node_tooltip(node, group_name)
+
+    def _update_node_tooltip(self, node: QTreeWidgetItem, folder_name: str):
+        available_width = self.tree.viewport().width() - 70 - (self._node_depth(node) * self.tree.indentation())
+        text_width = self.tree.fontMetrics().horizontalAdvance(folder_name)
+        if text_width > max(available_width, 80):
+            node.setToolTip(0, folder_name)
+        else:
+            node.setToolTip(0, "")
+
+    def _node_depth(self, node: QTreeWidgetItem) -> int:
+        depth = 0
+        parent = node.parent()
+        while parent is not None:
+            depth += 1
+            parent = parent.parent()
+        return depth
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        for data in self.ds_nodes.values():
+            node = data.get("node")
+            if node is None:
+                continue
+            folder_name = node.data(0, Qt.UserRole) or ""
+            self._update_node_tooltip(node, folder_name)
 
     def _on_selection_changed(self):
         selected = self.tree.selectedItems()

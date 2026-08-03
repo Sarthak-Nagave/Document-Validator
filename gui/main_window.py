@@ -2,7 +2,7 @@ import os
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QMessageBox, QSplitter, QLabel, QSizePolicy
 )
-from PySide6.QtCore import QSettings, Qt
+from PySide6.QtCore import QSettings, Qt, QTimer
 from gui.theme import Theme
 from gui.widgets.header import Header
 from gui.widgets.folder_selector import FolderSelector
@@ -84,7 +84,7 @@ class MainWindow(QMainWindow):
         
         # 1. Left Panel (Project Tree)
         self.project_tree = ProjectTree()
-        self.project_tree.setMinimumWidth(260)
+        self.project_tree.setMinimumWidth(320)
         self.project_tree.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.splitter.addWidget(self.project_tree)
         
@@ -100,11 +100,11 @@ class MainWindow(QMainWindow):
         self.detail_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.splitter.addWidget(self.detail_panel)
         
-        # Target ratio: Tree ~25%, Table ~55%, Details ~20%
-        self.splitter.setSizes([300, 660, 240])
-        self.splitter.setStretchFactor(0, 25)
-        self.splitter.setStretchFactor(1, 55)
-        self.splitter.setStretchFactor(2, 20)
+        # Target ratio: Tree ~30%, Table ~45%, Details ~25%
+        self.splitter.setSizes([360, 540, 300])
+        self.splitter.setStretchFactor(0, 30)
+        self.splitter.setStretchFactor(1, 45)
+        self.splitter.setStretchFactor(2, 25)
         
         # Progress
         self.progress_panel = ProgressPanel()
@@ -240,8 +240,27 @@ class MainWindow(QMainWindow):
         raw_state = self.settings.value("main/splitter_state")
         if raw_state:
             self.splitter.restoreState(raw_state)
+            # If an older saved state heavily underweights the tree, rebalance to the new usability baseline.
+            QTimer.singleShot(0, self._rebalance_splitter_if_needed)
         else:
-            self.splitter.setSizes([300, 660, 240])
+            self.splitter.setSizes([360, 540, 300])
+
+    def _rebalance_splitter_if_needed(self):
+        sizes = self.splitter.sizes()
+        total = sum(sizes)
+        if total <= 0:
+            return
+        tree_ratio = sizes[0] / total
+        table_ratio = sizes[1] / total
+        details_ratio = sizes[2] / total
+
+        # Keep startup layout close to usability target: 30/45/25.
+        if (
+            abs(tree_ratio - 0.30) > 0.03
+            or abs(table_ratio - 0.45) > 0.05
+            or abs(details_ratio - 0.25) > 0.03
+        ):
+            self.splitter.setSizes([360, 540, 300])
 
     def _save_splitter_state(self):
         self.settings.setValue("main/splitter_state", self.splitter.saveState())
